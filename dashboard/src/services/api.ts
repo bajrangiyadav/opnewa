@@ -476,6 +476,7 @@ export interface BulkMessageItem {
 
 export interface SendBulkPayload {
   batchId?: string;
+  image?: BulkMediaPayload;
   messages: BulkMessageItem[];
   options?: {
     delayBetweenMessages?: number;

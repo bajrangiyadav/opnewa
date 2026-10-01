@@ -74,7 +74,7 @@ const fallbackMime: Record<(typeof messageTypes)[number], string> = {
   sticker: 'image/webp',
   poll: 'application/octet-stream',
   forward: 'application/octet-stream',
-  bulk: 'application/octet-stream',
+  bulk: 'image/jpeg',
 };
 
 // Client pre-check before base64-encoding an upload. Aligned with the default request-body limit: base64
@@ -104,6 +104,7 @@ export function MessageTester() {
   const [mediaFile, setMediaFile] = useState<{ base64: string; mimetype: string; filename: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bulkFileInputRef = useRef<HTMLInputElement>(null);
+  const bulkMediaInputRef = useRef<HTMLInputElement>(null);
   // Monotonic token invalidating an in-flight FileReader: a second pick, a URL edit, a removal,
   // or an unmount before `onload` fires must win over the late-arriving bytes — otherwise the
   // slower read overwrites the newer state (and re-clears a URL the user just typed).
@@ -285,8 +286,9 @@ export function MessageTester() {
   } else if (messageType === 'forward') {
     formValid = forwardTo.trim().length > 0 && forwardMessageId.trim().length > 0;
   } else if (messageType === 'bulk') {
+    const hasMedia = !!mediaFile || mediaUrl.trim().length > 0;
     formValid =
-      content.trim().length > 0 &&
+      (content.trim().length > 0 || hasMedia) &&
       bulkRecipientList.length > 0 &&
       bulkRecipientList.length <= BULK_MAX_RECIPIENTS &&
       (delayMs === undefined || (!Number.isNaN(delayMs) && delayMs >= 1000 && delayMs <= 60000));
@@ -329,12 +331,35 @@ export function MessageTester() {
 
       // Bulk is a batch, not a single send: 202 + batchId, then poll progress until terminal.
       if (messageType === 'bulk') {
+        const hasMedia = !!mediaFile || !!mediaUrl.trim();
+        const mediaPayload = hasMedia
+          ? (mediaFile
+              ? {
+                  base64: mediaFile.base64,
+                  mimetype: mediaFile.mimetype && mediaFile.mimetype !== 'application/octet-stream' ? mediaFile.mimetype : 'image/jpeg',
+                  filename: mediaFile.filename,
+                }
+              : { url: mediaUrl.trim() })
+          : undefined;
+
         const batch = await messageApi.sendBulk(session, {
-          messages: bulkRecipientList.map(recipientChatId => ({
-            chatId: recipientChatId,
-            type: 'text' as const,
-            content: { text: content },
-          })),
+          ...(mediaPayload ? { image: mediaPayload } : {}),
+          messages: bulkRecipientList.map(recipientChatId => {
+            if (hasMedia) {
+              return {
+                chatId: recipientChatId,
+                type: 'image' as const,
+                content: {
+                  ...(content.trim() ? { caption: content } : {}),
+                },
+              };
+            }
+            return {
+              chatId: recipientChatId,
+              type: 'text' as const,
+              content: { text: content },
+            };
+          }),
           ...(delayMs !== undefined ? { options: { delayBetweenMessages: delayMs } } : {}),
         });
         batchSessionRef.current = session;
@@ -867,13 +892,47 @@ export function MessageTester() {
                   {t('messageTester.bulkRecipientsCount', { count: bulkRecipientList.length })}
                 </span>
               </div>
+              {/* Optional Image / Banner Upload for Bulk */}
               <div className="form-group">
-                <label htmlFor="mt-12">{t('messageTester.messageContent')}</label>
+                <label>{t('messageTester.uploadFile')} (Image / Banner - Optional)</label>
+                {mediaFile ? (
+                  <div className="file-selected">
+                    <span className="file-name" title={mediaFile.filename}>
+                      {mediaFile.filename}
+                    </span>
+                    <button type="button" className="remove-file-btn" onClick={clearMediaFile}>
+                      <X size={14} /> {t('messageTester.removeFile')}
+                    </button>
+                  </div>
+                ) : (
+                  <button type="button" className="browse-btn" onClick={() => bulkMediaInputRef.current?.click()}>
+                    <Upload size={14} /> {t('messageTester.browse')}
+                  </button>
+                )}
+                <input
+                  ref={bulkMediaInputRef}
+                  type="file"
+                  style={{ display: 'none' }}
+                  accept="image/*"
+                  onChange={handleFileChange}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="mt-12">
+                  {mediaFile || mediaUrl.trim()
+                    ? `${t('messageTester.caption')} (${t('common.optional')})`
+                    : t('messageTester.messageContent')}
+                </label>
                 <textarea
                   id="mt-12"
                   value={content}
                   onChange={e => setContent(e.target.value)}
-                  placeholder={t('messageTester.messagePlaceholder')}
+                  placeholder={
+                    mediaFile || mediaUrl.trim()
+                      ? t('messageTester.captionPlaceholder')
+                      : t('messageTester.messagePlaceholder')
+                  }
                   rows={4}
                 />
               </div>

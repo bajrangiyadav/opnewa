@@ -160,6 +160,12 @@ export class SendBulkMessageDto {
   @IsString()
   batchId?: string;
 
+  @ApiPropertyOptional({ description: 'Shared image payload applied to all image messages in the batch', type: BulkMediaDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BulkMediaDto)
+  image?: BulkMediaDto;
+
   @ApiProperty({
     description:
       'Array of messages (max 100 per request; exact duplicate entries are collapsed — first occurrence wins)',

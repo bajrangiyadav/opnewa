@@ -199,6 +199,9 @@ export class BulkMessageService implements OnApplicationBootstrap {
     const seenEntries = new Set<string>();
     const messages: SendBulkMessageDto['messages'] = [];
     for (const message of dto.messages) {
+      if (dto.image && message.type === 'image' && !message.content?.image) {
+        message.content = { ...message.content, image: dto.image };
+      }
       // Hashed, not retained verbatim: the raw JSON of a 100-item media batch is a second copy of
       // the whole payload (up to the body limit) held for the length of the loop.
       const fingerprint = createHash('sha256')
